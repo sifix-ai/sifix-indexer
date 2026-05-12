@@ -17,7 +17,9 @@ async function main() {
         block_number as "blockNumber",
         reason_hash as "reasonHash",
         reporter as "reporter",
-        is_scam as "isScam"
+        is_scam as "isScam",
+        target_id as "targetId",
+        target_type as "targetType"
       from scam_vote_events
       order by block_number desc, log_index desc
       limit 200
@@ -41,6 +43,8 @@ async function main() {
     reasonHash: r.reasonHash,
     reporter: r.reporter,
     isScam: Boolean(r.isScam),
+    targetId: r.targetId,
+    targetType: r.targetType,
   }));
 
   const lastBlock = votes.length ? Math.max(...votes.map((v: any) => v.blockNumber)) : null;
