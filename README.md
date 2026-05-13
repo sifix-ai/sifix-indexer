@@ -52,6 +52,10 @@ Create `.env.local` (or export env vars):
 PONDER_RPC_URL_16602=https://evmrpc-testnet.0g.ai
 PONDER_START_BLOCK=0
 
+# Dedicated Ponder DB (recommended separate from dApp DB)
+DATABASE_URL=postgresql://sifix:CHANGE_ME@10.3.1.114:5432/sifix_indexer?schema=public
+PONDER_DATABASE_URL=postgresql://sifix:CHANGE_ME@10.3.1.114:5432/sifix_indexer?schema=public
+
 # Reconcile bridge
 PONDER_API_URL=http://localhost:42069/sql
 DAPP_RECONCILE_URL=http://localhost:3000/api/internal/reconcile/onchain
@@ -99,6 +103,7 @@ to:
 - Event indexing handler implemented
 - Reconcile push script implemented
 - Reconcile payload now includes `targetId` and `targetType` for richer dApp resolution context
+- Recommended deployment shape now uses dedicated PostgreSQL database `sifix_indexer` separate from dApp business DB `sifix`
 - Typecheck/codegen passing
 
 ## Next
