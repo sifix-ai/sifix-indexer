@@ -98,6 +98,7 @@ to:
 - Config wired to Galileo + ScamReporter
 - Event indexing handler implemented
 - Reconcile push script implemented
+- Reconcile payload now includes `targetId` and `targetType` for richer dApp resolution context
 - Typecheck/codegen passing
 
 ## Next
