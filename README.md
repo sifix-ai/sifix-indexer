@@ -2,32 +2,34 @@
 
 Ponder-based onchain indexer for SIFIX threat intelligence pipeline.
 
-Indexes `ScamVoteSubmitted` events from **0G Galileo Testnet (Chain ID: 16602)** and pushes normalized event batches to SIFIX dApp reconcile endpoint.
+Indexes `SecurityReportSubmitted` events from **0G Galileo Testnet (Chain ID: 16602)** and pushes normalized event batches to SIFIX dApp reconcile endpoint.
 
 ## Scope
 
 - Chain: 0G Galileo (`16602`)
-- Contract: `ScamReporter` (`0x544a39149d5169E4e1bDf7F8492804224CB70152`)
-- Event: `ScamVoteSubmitted(address reporter, bytes32 targetId, uint8 targetType, bytes32 reasonHash, bool isScam)`
+- Contract: `SifixReputation` (`0xBBa8b030D80113e50271a2bbEeDBE109D9f1C42e`)
+- Event: `SecurityReportSubmitted(uint256 reportId, address reporter, bytes32 targetId, string target, uint8 threatType, bytes32 evidenceHash, uint8 severity, uint256 timestamp)`
 
 ## Architecture
 
 - `ponder.config.ts` — chain + contract source config
-- `ponder.schema.ts` — `scam_vote_events` table definition
+- `ponder.schema.ts` — `security_report_events` table definition
 - `src/index.ts` — event handler writes normalized records
-- `scripts/push-reconcile.ts` — pushes indexed events to dApp `POST /api/internal/reconcile/onchain`
+- `scripts/push-reconcile.ts` — pushes indexed events to dApp `POST /api/v1/sync/reconcile-batch`
 
 ## Data Model (indexed)
 
 - `txHash`
 - `logIndex`
 - `blockNumber`
-- `blockTimestamp`
+- `reportId`
 - `reporter`
 - `targetId`
-- `targetType`
-- `reasonHash`
-- `isScam`
+- `target`
+- `threatType`
+- `evidenceHash`
+- `severity`
+- `eventTimestamp`
 
 Unique event identity: `txHash-logIndex`.
 
@@ -55,10 +57,11 @@ PONDER_START_BLOCK=0
 # Dedicated Ponder DB (recommended separate from dApp DB)
 DATABASE_URL=postgresql://sifix:CHANGE_ME@10.3.1.114:5432/sifix_indexer?schema=public
 PONDER_DATABASE_URL=postgresql://sifix:CHANGE_ME@10.3.1.114:5432/sifix_indexer?schema=public
+DATABASE_SCHEMA=sifix_reputation_indexer
 
 # Reconcile bridge
 PONDER_API_URL=http://localhost:42069/sql
-DAPP_RECONCILE_URL=http://localhost:3000/api/internal/reconcile/onchain
+DAPP_RECONCILE_URL=http://localhost:3000/api/v1/sync/reconcile-batch
 CRON_SECRET=your_secret
 ```
 
@@ -79,32 +82,47 @@ This script queries recent indexed rows and sends:
 ```json
 {
   "events": [
-    { "txHash": "0x...", "blockNumber": 12345, "reasonHash": "0x..." }
-  ]
+    {
+      "txHash": "0x...",
+      "logIndex": 0,
+      "blockNumber": 12345,
+      "reportId": "1",
+      "reporter": "0x...",
+      "targetId": "0x...",
+      "target": "example.com",
+      "threatType": 1,
+      "evidenceHash": "0x...",
+      "severity": 3,
+      "eventTimestamp": "1715680000"
+    }
+  ],
+  "lastBlock": 12345,
+  "chainId": 16602
 }
 ```
 
 to:
 
-`POST /api/internal/reconcile/onchain` with `Authorization: Bearer <CRON_SECRET>`.
+`POST /api/v1/sync/reconcile-batch` with `Authorization: Bearer <CRON_SECRET>`.
 
 ## Integration Contract with dApp
 
-- `reasonHash` from onchain event maps to dApp `reportHash`.
+- `evidenceHash` from onchain event maps to dApp evidence linkage.
+- dApp sync state key: `sifix_reputation_indexer`.
 - dApp updates:
-  - `localStatus` => `SYNCED`
-  - `onchainStatus` => `SUBMITTED`
-  - `onchainTxHash`, `blockNumber`, metadata
+  - normalized threat/report records from onchain source
+  - `sync_state.lastBlock` for incremental reconcile
+  - onchain metadata (`txHash`, `blockNumber`, `reportId`, `severity`)
 
 ## Current Status (May 2026)
 
 - Scaffold complete
-- Config wired to Galileo + ScamReporter
-- Event indexing handler implemented
-- Reconcile push script implemented
-- Reconcile payload now includes `targetId` and `targetType` for richer dApp resolution context
-- Recommended deployment shape now uses dedicated PostgreSQL database `sifix_indexer` separate from dApp business DB `sifix`
-- Typecheck/codegen passing
+- Config wired to Galileo + SifixReputation (`0xBBa8b030D80113e50271a2bbEeDBE109D9f1C42e`)
+- Event indexing handler implemented for `SecurityReportSubmitted`
+- Reconcile push script migrated to `events + lastBlock + chainId` payload
+- Reconcile target migrated to `POST /api/v1/sync/reconcile-batch`
+- Sync cursor key aligned to `sifix_reputation_indexer`
+- Recommended deployment uses dedicated PostgreSQL database `sifix_indexer` separate from dApp business DB `sifix`
 
 ## Next
 

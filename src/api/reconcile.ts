@@ -1,11 +1,14 @@
 import { db } from "ponder:api";
-import { scamVoteEvents } from "ponder:schema";
+import * as schema from "ponder:schema";
+import { securityReportEvents } from "ponder:schema";
 import { Hono } from "hono";
-import { eq, desc, gt } from "ponder";
+import { client, desc, gt } from "ponder";
 
 const app = new Hono();
+const CHAIN_ID = Number(process.env.CHAIN_ID || 16602);
 
-// Simple CORS middleware
+app.use("/sql/*", client({ db, schema }));
+
 app.use("/*", async (c, next) => {
   await next();
   c.header("Access-Control-Allow-Origin", "*");
@@ -13,7 +16,6 @@ app.use("/*", async (c, next) => {
   c.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
 });
 
-// Handle OPTIONS preflight
 app.options("/*", (c) => {
   c.header("Access-Control-Allow-Origin", "*");
   c.header("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
@@ -21,17 +23,12 @@ app.options("/*", (c) => {
   return c.text("");
 });
 
-/**
- * GET /api/reconcile/sync-state
- * Get current sync state (last indexed block)
- */
 app.get("/sync-state", async (c) => {
   try {
-    // Get the latest block number from indexed events
     const latestEvent = await db
       .select()
-      .from(scamVoteEvents)
-      .orderBy(desc(scamVoteEvents.blockNumber))
+      .from(securityReportEvents)
+      .orderBy(desc(securityReportEvents.blockNumber))
       .limit(1);
 
     const lastBlock = latestEvent[0]?.blockNumber || 0;
@@ -39,9 +36,9 @@ app.get("/sync-state", async (c) => {
     return c.json({
       success: true,
       data: {
-        name: "scam_vote_indexer",
+        name: "sifix_reputation_indexer",
         lastBlock,
-        chainId: 16602,
+        chainId: CHAIN_ID,
         source: "onchain",
         status: "active",
         lastSyncAt: new Date().toISOString(),
@@ -50,39 +47,29 @@ app.get("/sync-state", async (c) => {
   } catch (error: any) {
     console.error("[Reconcile] Error getting sync state:", error);
     return c.json(
-      {
-        success: false,
-        error: error?.message || "Failed to get sync state",
-      },
+      { success: false, error: error?.message || "Failed to get sync state" },
       { status: 500 }
     );
   }
 });
 
-/**
- * POST /api/reconcile/batch
- * Get batch of events since lastBlock
- * This is the pull-based approach where dapp polls indexer
- */
 app.post("/batch", async (c) => {
   try {
     const body = await c.req.json();
     const { lastBlock = 0, limit = 100 } = body;
 
-    // Fetch events after lastBlock
     const events = await db
       .select()
-      .from(scamVoteEvents)
-      .where(gt(scamVoteEvents.blockNumber, lastBlock))
-      .orderBy(scamVoteEvents.blockNumber)
-      .orderBy(scamVoteEvents.logIndex)
+      .from(securityReportEvents)
+      .where(gt(securityReportEvents.blockNumber, lastBlock))
+      .orderBy(securityReportEvents.blockNumber)
+      .orderBy(securityReportEvents.logIndex)
       .limit(limit);
 
-    // Get the latest block number
     const latestEvent = await db
       .select()
-      .from(scamVoteEvents)
-      .orderBy(desc(scamVoteEvents.blockNumber))
+      .from(securityReportEvents)
+      .orderBy(desc(securityReportEvents.blockNumber))
       .limit(1);
 
     const currentLastBlock = latestEvent[0]?.blockNumber || 0;
@@ -98,52 +85,31 @@ app.post("/batch", async (c) => {
   } catch (error: any) {
     console.error("[Reconcile] Error fetching batch:", error);
     return c.json(
-      {
-        success: false,
-        error: error?.message || "Failed to fetch batch",
-      },
+      { success: false, error: error?.message || "Failed to fetch batch" },
       { status: 500 }
     );
   }
 });
 
-/**
- * POST /api/reconcile/push-batch
- * Push batch of events to dapp (push-based approach)
- * This requires dapp to provide an endpoint and CRON_SECRET
- */
 app.post("/push-batch", async (c) => {
   try {
     const body = await c.req.json();
-    const {
-      dappUrl,
-      cronSecret,
-      batchSize = 50,
-    } = body;
+    const { dappUrl, cronSecret, batchSize = 50 } = body;
 
     if (!dappUrl || !cronSecret) {
       return c.json(
-        {
-          success: false,
-          error: "Missing dappUrl or cronSecret",
-        },
+        { success: false, error: "Missing dappUrl or cronSecret" },
         { status: 400 }
       );
     }
 
-    // Get current sync state from dapp
     const stateRes = await fetch(`${dappUrl}/api/v1/sync/state`, {
-      headers: {
-        Authorization: `Bearer ${cronSecret}`,
-      },
+      headers: { Authorization: `Bearer ${cronSecret}` },
     });
 
     if (!stateRes.ok) {
       return c.json(
-        {
-          success: false,
-          error: "Failed to get dapp sync state",
-        },
+        { success: false, error: "Failed to get dapp sync state" },
         { status: 500 }
       );
     }
@@ -151,13 +117,12 @@ app.post("/push-batch", async (c) => {
     const stateData: any = await stateRes.json();
     const lastBlock = stateData.data?.lastBlock || 0;
 
-    // Fetch events after lastBlock
     const events = await db
       .select()
-      .from(scamVoteEvents)
-      .where(gt(scamVoteEvents.blockNumber, lastBlock))
-      .orderBy(scamVoteEvents.blockNumber)
-      .orderBy(scamVoteEvents.logIndex)
+      .from(securityReportEvents)
+      .where(gt(securityReportEvents.blockNumber, lastBlock))
+      .orderBy(securityReportEvents.blockNumber)
+      .orderBy(securityReportEvents.logIndex)
       .limit(batchSize);
 
     if (events.length === 0) {
@@ -170,7 +135,8 @@ app.post("/push-batch", async (c) => {
       });
     }
 
-    // Push batch to dapp
+    const lastIndexedBlock = Math.max(...events.map((e: any) => Number(e.blockNumber)));
+
     const reconcileRes = await fetch(`${dappUrl}/api/v1/sync/reconcile-batch`, {
       method: "POST",
       headers: {
@@ -178,25 +144,28 @@ app.post("/push-batch", async (c) => {
         Authorization: `Bearer ${cronSecret}`,
       },
       body: JSON.stringify({
-        votes: events.map((e: any) => ({
-          reasonHash: e.reasonHash,
-          isScam: e.isScam,
-          reporter: e.reporter,
-          blockNumber: e.blockNumber,
+        events: events.map((e: any) => ({
           txHash: e.txHash,
+          logIndex: Number(e.logIndex),
+          blockNumber: Number(e.blockNumber),
+          reportId: e.reportId,
+          reporter: e.reporter,
+          targetId: e.targetId,
+          target: e.target,
+          threatType: Number(e.threatType),
+          evidenceHash: e.evidenceHash,
+          severity: Number(e.severity),
+          eventTimestamp: e.eventTimestamp,
         })),
-        lastBlock: Math.max(...events.map((e: any) => e.blockNumber)),
-        chainId: 16602,
+        lastBlock: lastIndexedBlock,
+        chainId: CHAIN_ID,
       }),
     });
 
     if (!reconcileRes.ok) {
       const errorText = await reconcileRes.text();
       return c.json(
-        {
-          success: false,
-          error: `Failed to push to dapp: ${errorText}`,
-        },
+        { success: false, error: `Failed to push to dapp: ${errorText}` },
         { status: 500 }
       );
     }
@@ -206,19 +175,16 @@ app.post("/push-batch", async (c) => {
     return c.json({
       success: true,
       data: {
-        synced: reconcileData.data.synced || 0,
-        notFound: reconcileData.data.notFound || 0,
-        errors: reconcileData.data.errors || 0,
-        lastBlock: Math.max(...events.map((e: any) => e.blockNumber)),
+        synced: reconcileData.data?.synced || 0,
+        notFound: reconcileData.data?.notFound || 0,
+        errors: reconcileData.data?.errors || 0,
+        lastBlock: lastIndexedBlock,
       },
     });
   } catch (error: any) {
     console.error("[Reconcile] Error in push-batch:", error);
     return c.json(
-      {
-        success: false,
-        error: error?.message || "Failed to push batch",
-      },
+      { success: false, error: error?.message || "Failed to push batch" },
       { status: 500 }
     );
   }

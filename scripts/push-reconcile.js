@@ -12,12 +12,15 @@ async function main() {
         tx_hash as "txHash",
         log_index as "logIndex",
         block_number as "blockNumber",
-        reason_hash as "reasonHash",
+        report_id as "reportId",
         reporter as "reporter",
-        is_scam as "isScam",
         target_id as "targetId",
-        target_type as "targetType"
-      from scam_vote_events
+        target as "target",
+        threat_type as "threatType",
+        evidence_hash as "evidenceHash",
+        severity as "severity",
+        event_timestamp as "eventTimestamp"
+      from security_report_events
       order by block_number desc, log_index desc
       limit 200
     `,
@@ -31,24 +34,27 @@ async function main() {
         throw new Error(`Ponder query failed: ${eventsRes.status}`);
     const eventsPayload = (await eventsRes.json());
     const rows = eventsPayload?.rows || eventsPayload?.data || [];
-    const votes = rows.map((r) => ({
+    const events = rows.map((r) => ({
         txHash: r.txHash,
         logIndex: Number(r.logIndex),
         blockNumber: Number(r.blockNumber),
-        reasonHash: r.reasonHash,
+        reportId: r.reportId,
         reporter: r.reporter,
-        isScam: Boolean(r.isScam),
         targetId: r.targetId,
-        targetType: r.targetType,
+        target: r.target,
+        threatType: Number(r.threatType),
+        evidenceHash: r.evidenceHash,
+        severity: Number(r.severity),
+        eventTimestamp: r.eventTimestamp,
     }));
-    const lastBlock = votes.length ? Math.max(...votes.map((v) => v.blockNumber)) : null;
+    const lastBlock = events.length ? Math.max(...events.map((v) => v.blockNumber)) : null;
     const syncRes = await fetch(DAPP_RECONCILE_URL, {
         method: 'POST',
         headers: {
             'content-type': 'application/json',
             authorization: `Bearer ${CRON_SECRET}`,
         },
-        body: JSON.stringify({ votes, lastBlock, chainId: CHAIN_ID }),
+        body: JSON.stringify({ events, lastBlock, chainId: CHAIN_ID }),
     });
     const data = await syncRes.text();
     console.log(data);

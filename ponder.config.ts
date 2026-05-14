@@ -1,5 +1,5 @@
 import { createConfig } from 'ponder';
-import { ScamReporterAbi } from './abis/ScamReporterAbi.js';
+import { SifixReputationAbi } from './abis/SifixReputationAbi.js';
 
 export default createConfig({
   chains: {
@@ -9,10 +9,10 @@ export default createConfig({
     },
   },
   contracts: {
-    ScamReporter: {
+    SifixReputation: {
       chain: 'galileo',
-      abi: ScamReporterAbi,
-      address: '0x544a39149d5169E4e1bDf7F8492804224CB70152',
+      abi: SifixReputationAbi,
+      address: '0xBBa8b030D80113e50271a2bbEeDBE109D9f1C42e',
       startBlock: Number(process.env.PONDER_START_BLOCK || 0),
     },
   },
