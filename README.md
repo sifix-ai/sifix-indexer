@@ -1,6 +1,6 @@
 # SIFIX Indexer
 
-Ponder-based onchain indexer for SIFIX threat intelligence pipeline.
+Ponder-based onchain indexer for SIFIX threat intelligence, reconciliation, and transparent on-chain security events.
 
 Indexes `SecurityReportSubmitted` events from **0G Galileo Testnet (Chain ID: 16602)** and pushes normalized event batches to SIFIX dApp reconcile endpoint.
 
